@@ -3,7 +3,6 @@ package filesystem
 import (
 	"sync"
 	"sync/atomic"
-	"syscall"
 	"time"
 
 	"emperror.dev/errors"
@@ -164,7 +163,6 @@ func (fs *Filesystem) DirectorySize(dir string) (int64, error) {
 	}
 
 	var size int64
-	var st syscall.Stat_t
 
 	err = godirwalk.Walk(d, &godirwalk.Options{
 		Unsorted: true,
@@ -183,8 +181,7 @@ func (fs *Filesystem) DirectorySize(dir string) (int64, error) {
 			}
 
 			if !e.IsDir() {
-				syscall.Lstat(p, &st)
-				atomic.AddInt64(&size, st.Size)
+				atomic.AddInt64(&size, 1)
 			}
 
 			return nil

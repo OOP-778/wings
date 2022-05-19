@@ -124,10 +124,10 @@ func rootCmdRun(cmd *cobra.Command, _ []string) {
 		log.WithField("error", err).Fatal("failed to configure system directories for pterodactyl")
 		return
 	}
-	log.WithField("username", config.Get().System.User).Info("checking for pterodactyl system user")
-	if err := config.EnsurePterodactylUser(); err != nil {
-		log.WithField("error", err).Fatal("failed to create pterodactyl system user")
-	}
+	//log.WithField("username", config.Get().System.User).Info("checking for pterodactyl system user")
+	//if err := config.EnsurePterodactylUser(); err != nil {
+	//	log.WithField("error", err).Fatal("failed to create pterodactyl system user")
+	//}
 	log.WithFields(log.Fields{
 		"username": config.Get().System.Username,
 		"uid":      config.Get().System.User.Uid,

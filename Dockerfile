@@ -1,5 +1,5 @@
 # Stage 1 (Build)
-FROM --platform=$BUILDPLATFORM golang:1.17-alpine AS builder
+FROM golang:1.17-alpine AS builder
 
 ARG VERSION
 RUN apk add --update --no-cache git make upx
@@ -21,6 +21,7 @@ FROM gcr.io/distroless/static:latest
 COPY --from=builder /etc/os-release /etc/os-release
 
 COPY --from=builder /app/wings /usr/bin/
+COPY config.yml /etc/pterodactyl/config.yml
 CMD [ "/usr/bin/wings", "--config", "/etc/pterodactyl/config.yml" ]
 
-EXPOSE 8080
+EXPOSE 8020
