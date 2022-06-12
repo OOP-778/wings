@@ -231,13 +231,16 @@ func (e *Environment) Create() error {
 			},
 		},
 
-		SecurityOpt:    []string{"no-new-privileges"},
+		SecurityOpt:    []string{"seccomp:unconfined"},
 		ReadonlyRootfs: true,
 		CapDrop: []string{
 			"setpcap", "mknod", "audit_write", "net_raw", "dac_override",
 			"fowner", "fsetid", "net_bind_service", "sys_chroot", "setfcap",
 		},
 		NetworkMode: container.NetworkMode(config.Get().Docker.Network.Mode),
+		CapAdd: []string{
+			"sys_admin",
+		},
 	}
 
 	if _, err := e.client.ContainerCreate(context.Background(), conf, hostConf, nil, nil, e.Id); err != nil {
