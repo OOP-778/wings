@@ -89,8 +89,8 @@ type ApiConfiguration struct {
 	// servers.
 	DisableRemoteDownload bool `json:"disable_remote_download" yaml:"disable_remote_download"`
 
-	// The maximum size for files uploaded through the Panel in bytes.
-	UploadLimit int `default:"100" json:"upload_limit" yaml:"upload_limit"`
+	// The maximum size for files uploaded through the Panel in MB.
+	UploadLimit int64 `default:"100" json:"upload_limit" yaml:"upload_limit"`
 }
 
 // RemoteQueryConfiguration defines the configuration settings for remote requests
@@ -131,6 +131,10 @@ type SystemConfiguration struct {
 
 	// Directory where local backups will be stored on the machine.
 	BackupDirectory string `default:"/var/lib/pterodactyl/backups" yaml:"backup_directory"`
+
+	// TmpDirectory specifies where temporary files for Pterodactyl installation processes
+	// should be created. This supports environments running docker-in-docker.
+	TmpDirectory string `default:"/tmp/pterodactyl" yaml:"tmp_directory"`
 
 	// The user that should own all of the server files, and be used for containers.
 	Username string `default:"pterodactyl" yaml:"username"`
