@@ -171,11 +171,6 @@ func (e *Environment) Create() error {
 			evs[i] = "SERVER_IP=" + config.Get().Docker.Network.Interface
 			continue
 		}
-
-		// Set network mode from env
-		if strings.Contains(v, "DOCKER_NETWORK_MODE") {
-			config.Get().Docker.Network.Mode = strings.Split(v, "=")[1]
-		}
 	}
 
 	conf := &container.Config{
