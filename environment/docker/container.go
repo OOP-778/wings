@@ -251,12 +251,10 @@ func (e *Environment) Create() error {
 
 		SecurityOpt:    cfg.Docker.GetSeccompConfig(),
 		ReadonlyRootfs: true,
-		CapDrop: []string{
-			"setpcap", "mknod", "audit_write", "net_raw", "dac_override",
-			"fowner", "fsetid", "net_bind_service", "sys_chroot", "setfcap",
-		},
-		NetworkMode: networkMode,
-		UsernsMode:  container.UsernsMode(cfg.Docker.UsernsMode),
+		CapDrop:        cfg.Docker.Network.CapDrop,
+		CapAdd:         cfg.Docker.Network.CapAdd,
+		NetworkMode:    networkMode,
+		UsernsMode:     container.UsernsMode(cfg.Docker.UsernsMode),
 	}
 
 	if _, err := e.client.ContainerCreate(ctx, conf, hostConf, nil, nil, e.Id); err != nil {
