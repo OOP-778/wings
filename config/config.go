@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"text/template"
 	"time"
 
@@ -20,6 +21,7 @@ import (
 	"github.com/apex/log"
 	"github.com/creasty/defaults"
 	"github.com/gbrlsnchs/jwt/v3"
+	"golang.org/x/sys/unix"
 	"gopkg.in/yaml.v2"
 
 	"github.com/pterodactyl/wings/system"
@@ -87,7 +89,7 @@ type ApiConfiguration struct {
 	// Determines if functionality for allowing remote download of files into server directories
 	// is enabled on this instance. If set to "true" remote downloads will not be possible for
 	// servers.
-	DisableRemoteDownload bool `json:"disable_remote_download" yaml:"disable_remote_download"`
+	DisableRemoteDownload bool `json:"-" yaml:"disable_remote_download"`
 
 	// The maximum size for files uploaded through the Panel in MB.
 	UploadLimit int64 `default:"100" json:"upload_limit" yaml:"upload_limit"`
@@ -121,23 +123,23 @@ type RemoteQueryConfiguration struct {
 // SystemConfiguration defines basic system configuration settings.
 type SystemConfiguration struct {
 	// The root directory where all of the pterodactyl data is stored at.
-	RootDirectory string `default:"/var/lib/pterodactyl" yaml:"root_directory"`
+	RootDirectory string `default:"/var/lib/pterodactyl" json:"-" yaml:"root_directory"`
 
 	// Directory where logs for server installations and other wings events are logged.
-	LogDirectory string `default:"/var/log/pterodactyl" yaml:"log_directory"`
+	LogDirectory string `default:"/var/log/pterodactyl" json:"-" yaml:"log_directory"`
 
 	// Directory where the server data is stored at.
-	Data string `default:"/var/lib/pterodactyl/volumes" yaml:"data"`
+	Data string `default:"/var/lib/pterodactyl/volumes" json:"-" yaml:"data"`
 
 	// Directory where server archives for transferring will be stored.
-	ArchiveDirectory string `default:"/var/lib/pterodactyl/archives" yaml:"archive_directory"`
+	ArchiveDirectory string `default:"/var/lib/pterodactyl/archives" json:"-" yaml:"archive_directory"`
 
 	// Directory where local backups will be stored on the machine.
-	BackupDirectory string `default:"/var/lib/pterodactyl/backups" yaml:"backup_directory"`
+	BackupDirectory string `default:"/var/lib/pterodactyl/backups" json:"-" yaml:"backup_directory"`
 
 	// TmpDirectory specifies where temporary files for Pterodactyl installation processes
 	// should be created. This supports environments running docker-in-docker.
-	TmpDirectory string `default:"/tmp/pterodactyl" yaml:"tmp_directory"`
+	TmpDirectory string `default:"/tmp/pterodactyl" json:"-" yaml:"tmp_directory"`
 
 	// The user that should own all of the server files, and be used for containers.
 	Username string `default:"pterodactyl" yaml:"username"`
@@ -169,6 +171,25 @@ type SystemConfiguration struct {
 		Uid int `yaml:"uid"`
 		Gid int `yaml:"gid"`
 	} `yaml:"user"`
+
+	// Passwd controls the mounting of a generated passwd files into containers started by Wings.
+	Passwd struct {
+		// Enable controls whether generated passwd files should be mounted into containers.
+		//
+		// By default this option is disabled and Wings will not mount any additional passwd
+		// files into containers.
+		Enable bool `yaml:"enabled" default:"false"`
+
+		// Directory is the directory on disk where the generated files will be stored.
+		// This directory may be temporary as it will be re-created whenever Wings is started.
+		//
+		// This path **WILL** be both written to by Wings and mounted into containers created by
+		// Wings. If you are running Wings itself in a container, this path will need to be mounted
+		// into the Wings container as the exact path on the host, which should match the value
+		// specified here. If you are using SELinux, you will need to make sure this file has the
+		// correct SELinux context in order for containers to use it.
+		Directory string `yaml:"directory" default:"/run/wings/etc"`
+	} `yaml:"passwd"`
 
 	// The amount of time in seconds that can elapse before a server's disk space calculation is
 	// considered stale and a re-check should occur. DANGER: setting this value too low can seriously
@@ -209,6 +230,8 @@ type SystemConfiguration struct {
 	Backups Backups `yaml:"backups"`
 
 	Transfers Transfers `yaml:"transfers"`
+
+	OpenatMode string `default:"auto" yaml:"openat_mode"`
 }
 
 type CrashDetection struct {
@@ -302,7 +325,7 @@ type Configuration struct {
 
 	// The location where the panel is running that this daemon should connect to
 	// to collect data and send events.
-	PanelLocation string                   `json:"remote" yaml:"remote"`
+	PanelLocation string                   `json:"-" yaml:"remote"`
 	RemoteQuery   RemoteQueryConfiguration `json:"remote_query" yaml:"remote_query"`
 
 	// AllowedMounts is a list of allowed host-system mount points.
@@ -328,12 +351,6 @@ type Configuration struct {
 // This function does not modify the currently stored global configuration.
 func NewAtPath(path string) (*Configuration, error) {
 	var c Configuration
-	// Configures the default values for many of the configuration options present
-	// in the structs. Values set in the configuration file take priority over the
-	// default values.
-	if err := defaults.Set(&c); err != nil {
-		return nil, err
-	}
 	// Track the location where we created this configuration.
 	c.path = path
 	return &c, nil
@@ -493,6 +510,37 @@ func EnsurePterodactylUser() error {
 	return nil
 }
 
+// ConfigurePasswd generates required passwd files for use with containers started by Wings.
+func ConfigurePasswd() error {
+	passwd := _config.System.Passwd
+	if !passwd.Enable {
+		return nil
+	}
+
+	v := []byte(fmt.Sprintf(
+		`root:x:0:
+container:x:%d:
+nogroup:x:65534:`,
+		_config.System.User.Gid,
+	))
+	if err := os.WriteFile(filepath.Join(passwd.Directory, "group"), v, 0o644); err != nil {
+		return fmt.Errorf("failed to write file to %s/group: %v", passwd.Directory, err)
+	}
+
+	v = []byte(fmt.Sprintf(
+		`root:x:0:0::/root:/bin/sh
+container:x:%d:%d::/home/container:/bin/sh
+nobody:x:65534:65534::/var/empty:/bin/sh
+`,
+		_config.System.User.Uid,
+		_config.System.User.Gid,
+	))
+	if err := os.WriteFile(filepath.Join(passwd.Directory, "passwd"), v, 0o644); err != nil {
+		return fmt.Errorf("failed to write file to %s/passwd: %v", passwd.Directory, err)
+	}
+	return nil
+}
+
 // FromFile reads the configuration from the provided file and stores it in the
 // global singleton for this instance.
 func FromFile(path string) error {
@@ -506,6 +554,13 @@ func FromFile(path string) error {
 	}
 
 	if err := yaml.Unmarshal(b, c); err != nil {
+		return err
+	}
+
+	// Configures the default values for many of the configuration options present
+	// in the structs. Values set in the configuration file will not be overridden by the
+	// default values.
+	if err := defaults.Set(c); err != nil {
 		return err
 	}
 
@@ -555,6 +610,13 @@ func ConfigureDirectories() error {
 	log.WithField("path", _config.System.BackupDirectory).Debug("ensuring backup data directory exists")
 	if err := os.MkdirAll(_config.System.BackupDirectory, 0o700); err != nil {
 		return err
+	}
+
+	if _config.System.Passwd.Enable {
+		log.WithField("path", _config.System.Passwd.Directory).Debug("ensuring passwd directory exists")
+		if err := os.MkdirAll(_config.System.Passwd.Directory, 0o755); err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -670,4 +732,37 @@ func getSystemName() (string, error) {
 		return "", err
 	}
 	return release["ID"], nil
+}
+
+var (
+	openat2    atomic.Bool
+	openat2Set atomic.Bool
+)
+
+func UseOpenat2() bool {
+	if openat2Set.Load() {
+		return openat2.Load()
+	}
+	defer openat2Set.Store(true)
+
+	c := Get()
+	openatMode := c.System.OpenatMode
+	switch openatMode {
+	case "openat2":
+		openat2.Store(true)
+		return true
+	case "openat":
+		openat2.Store(false)
+		return false
+	default:
+		fd, err := unix.Openat2(unix.AT_FDCWD, "/", &unix.OpenHow{})
+		if err != nil {
+			log.WithError(err).Warn("error occurred while checking for openat2 support, falling back to openat")
+			openat2.Store(false)
+			return false
+		}
+		_ = unix.Close(fd)
+		openat2.Store(true)
+		return true
+	}
 }

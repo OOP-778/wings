@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"crypto/tls"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -13,7 +14,6 @@ import (
 
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/AlecAivazis/survey/v2/terminal"
-	"github.com/goccy/go-json"
 	"github.com/spf13/cobra"
 
 	"github.com/pterodactyl/wings/config"
@@ -154,6 +154,9 @@ func configureCmdRun(cmd *cobra.Command, args []string) {
 	if err := json.Unmarshal(b, cfg); err != nil {
 		panic(err)
 	}
+
+	// Manually specify the Panel URL as it won't be decoded from JSON.
+	cfg.PanelLocation = configureArgs.PanelURL
 
 	if err = config.WriteToDisk(cfg); err != nil {
 		panic(err)

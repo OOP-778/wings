@@ -2,7 +2,6 @@ package server
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"html/template"
 	"io"
@@ -14,8 +13,8 @@ import (
 
 	"emperror.dev/errors"
 	"github.com/apex/log"
-	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/mount"
 	"github.com/docker/docker/client"
 
@@ -162,7 +161,7 @@ func (s *Server) SetRestoring(state bool) {
 
 // RemoveContainer removes the installation container for the server.
 func (ip *InstallationProcess) RemoveContainer() error {
-	err := ip.client.ContainerRemove(ip.Server.Context(), ip.Server.ID()+"_installer", types.ContainerRemoveOptions{
+	err := ip.client.ContainerRemove(ip.Server.Context(), ip.Server.ID()+"_installer", container.RemoveOptions{
 		RemoveVolumes: true,
 		Force:         true,
 	})
@@ -218,30 +217,18 @@ func (ip *InstallationProcess) tempDir() string {
 // can be properly mounted into the installation container and then executed.
 func (ip *InstallationProcess) writeScriptToDisk() error {
 	// Make sure the temp directory root exists before trying to make a directory within it. The
-	// ioutil.TempDir call expects this base to exist, it won't create it for you.
+	// os.TempDir call expects this base to exist, it won't create it for you.
 	if err := os.MkdirAll(ip.tempDir(), 0o700); err != nil {
 		return errors.WithMessage(err, "could not create temporary directory for install process")
 	}
-
 	f, err := os.OpenFile(filepath.Join(ip.tempDir(), "install.sh"), os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0o644)
 	if err != nil {
 		return errors.WithMessage(err, "failed to write server installation script to disk before mount")
 	}
 	defer f.Close()
-
-	w := bufio.NewWriter(f)
-
-	scanner := bufio.NewScanner(bytes.NewReader([]byte(ip.Script.Script)))
-	for scanner.Scan() {
-		w.WriteString(scanner.Text() + "\n")
-	}
-
-	if err := scanner.Err(); err != nil {
+	if _, err := io.Copy(f, strings.NewReader(strings.ReplaceAll(ip.Script.Script, "\r\n", "\n"))); err != nil {
 		return err
 	}
-
-	w.Flush()
-
 	return nil
 }
 
@@ -260,7 +247,7 @@ func (ip *InstallationProcess) pullInstallationImage() error {
 	}
 
 	// Get the ImagePullOptions.
-	imagePullOptions := types.ImagePullOptions{All: false}
+	imagePullOptions := image.PullOptions{All: false}
 	if registryAuth != nil {
 		b64, err := registryAuth.Base64()
 		if err != nil {
@@ -273,7 +260,7 @@ func (ip *InstallationProcess) pullInstallationImage() error {
 
 	r, err := ip.client.ImagePull(ip.Server.Context(), ip.Script.ContainerImage, imagePullOptions)
 	if err != nil {
-		images, ierr := ip.client.ImageList(ip.Server.Context(), types.ImageListOptions{})
+		images, ierr := ip.client.ImageList(ip.Server.Context(), image.ListOptions{})
 		if ierr != nil {
 			// Well damn, something has gone really wrong here, just go ahead and abort there
 			// isn't much anything we can do to try and self-recover from this.
@@ -345,7 +332,7 @@ func (ip *InstallationProcess) AfterExecute(containerId string) error {
 	defer ip.RemoveContainer()
 
 	ip.Server.Log().WithField("container_id", containerId).Debug("pulling installation logs for server")
-	reader, err := ip.client.ContainerLogs(ip.Server.Context(), containerId, types.ContainerLogsOptions{
+	reader, err := ip.client.ContainerLogs(ip.Server.Context(), containerId, container.LogsOptions{
 		ShowStdout: true,
 		ShowStderr: true,
 		Follow:     false,
@@ -476,7 +463,7 @@ func (ip *InstallationProcess) Execute() (string, error) {
 	}
 
 	ip.Server.Log().WithField("container_id", r.ID).Info("running installation script for server in container")
-	if err := ip.client.ContainerStart(ctx, r.ID, types.ContainerStartOptions{}); err != nil {
+	if err := ip.client.ContainerStart(ctx, r.ID, container.StartOptions{}); err != nil {
 		return "", err
 	}
 
@@ -511,7 +498,7 @@ func (ip *InstallationProcess) Execute() (string, error) {
 // the server configuration directory, as well as to a websocket listener so
 // that the process can be viewed in the panel by administrators.
 func (ip *InstallationProcess) StreamOutput(ctx context.Context, id string) error {
-	opts := types.ContainerLogsOptions{ShowStdout: true, ShowStderr: true, Follow: true}
+	opts := container.LogsOptions{ShowStdout: true, ShowStderr: true, Follow: true}
 	reader, err := ip.client.ContainerLogs(ctx, id, opts)
 	if err != nil {
 		return err

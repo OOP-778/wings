@@ -7,7 +7,7 @@ import (
 
 	"emperror.dev/errors"
 	"github.com/juju/ratelimit"
-	"github.com/mholt/archiver/v4"
+	"github.com/mholt/archives"
 
 	"github.com/pterodactyl/wings/config"
 	"github.com/pterodactyl/wings/remote"
@@ -59,10 +59,10 @@ func (b *LocalBackup) WithLogContext(c map[string]interface{}) {
 
 // Generate generates a backup of the selected files and pushes it to the
 // defined location for this instance.
-func (b *LocalBackup) Generate(ctx context.Context, basePath, ignore string) (*ArchiveDetails, error) {
+func (b *LocalBackup) Generate(ctx context.Context, fsys *filesystem.Filesystem, ignore string) (*ArchiveDetails, error) {
 	a := &filesystem.Archive{
-		BasePath: basePath,
-		Ignore:   ignore,
+		Filesystem: fsys,
+		Ignore:     ignore,
 	}
 
 	b.log().WithField("path", b.Path()).Info("creating backup for server")
@@ -93,14 +93,14 @@ func (b *LocalBackup) Restore(ctx context.Context, _ io.Reader, callback Restore
 	if writeLimit := int64(config.Get().System.Backups.WriteLimit * 1024 * 1024); writeLimit > 0 {
 		reader = ratelimit.Reader(f, ratelimit.NewBucketWithRate(float64(writeLimit), writeLimit))
 	}
-	if err := format.Extract(ctx, reader, nil, func(ctx context.Context, f archiver.File) error {
+	if err := format.Extract(ctx, reader, func(ctx context.Context, f archives.FileInfo) error {
 		r, err := f.Open()
 		if err != nil {
 			return err
 		}
 		defer r.Close()
 
-		return callback(filesystem.ExtractNameFromArchive(f), f.FileInfo, r)
+		return callback(f.NameInArchive, f.FileInfo, r)
 	}); err != nil {
 		return err
 	}

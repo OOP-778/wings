@@ -3,7 +3,6 @@ package filesystem
 import (
 	"context"
 	"os"
-	"sync/atomic"
 	"testing"
 
 	. "github.com/franela/goblin"
@@ -49,9 +48,7 @@ func TestFilesystem_DecompressFile(t *testing.T) {
 		}
 
 		g.AfterEach(func() {
-			rfs.reset()
-			atomic.StoreInt64(&fs.diskUsed, 0)
-			atomic.StoreInt64(&fs.diskLimit, 0)
+			_ = fs.TruncateRootDirectory()
 		})
 	})
 }

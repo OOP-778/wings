@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	. "github.com/franela/goblin"
-	"github.com/mholt/archiver/v4"
+	"github.com/mholt/archives"
 )
 
 func TestArchive_Stream(t *testing.T) {
@@ -20,43 +20,34 @@ func TestArchive_Stream(t *testing.T) {
 	g.Describe("Archive", func() {
 		g.AfterEach(func() {
 			// Reset the filesystem after each run.
-			rfs.reset()
-		})
-
-		g.It("throws an error when passed invalid file paths", func() {
-			a := &Archive{
-				BasePath: fs.Path(),
-				Files: []string{
-					// To use the archiver properly, this needs to be filepath.Join(BasePath, "yeet")
-					// However, this test tests that we actually validate that behavior.
-					"yeet",
-				},
-			}
-
-			g.Assert(a.Create(context.Background(), "")).IsNotNil()
+			_ = fs.TruncateRootDirectory()
 		})
 
 		g.It("creates archive with intended files", func() {
 			g.Assert(fs.CreateDirectory("test", "/")).IsNil()
 			g.Assert(fs.CreateDirectory("test2", "/")).IsNil()
 
-			err := fs.Writefile("test/file.txt", strings.NewReader("hello, world!\n"))
+			r := strings.NewReader("hello, world!\n")
+			err := fs.Write("test/file.txt", r, r.Size(), 0o644)
 			g.Assert(err).IsNil()
 
-			err = fs.Writefile("test2/file.txt", strings.NewReader("hello, world!\n"))
+			r = strings.NewReader("hello, world!\n")
+			err = fs.Write("test2/file.txt", r, r.Size(), 0o644)
 			g.Assert(err).IsNil()
 
-			err = fs.Writefile("test_file.txt", strings.NewReader("hello, world!\n"))
+			r = strings.NewReader("hello, world!\n")
+			err = fs.Write("test_file.txt", r, r.Size(), 0o644)
 			g.Assert(err).IsNil()
 
-			err = fs.Writefile("test_file.txt.old", strings.NewReader("hello, world!\n"))
+			r = strings.NewReader("hello, world!\n")
+			err = fs.Write("test_file.txt.old", r, r.Size(), 0o644)
 			g.Assert(err).IsNil()
 
 			a := &Archive{
-				BasePath: fs.Path(),
+				Filesystem: fs,
 				Files: []string{
-					filepath.Join(fs.Path(), "test"),
-					filepath.Join(fs.Path(), "test_file.txt"),
+					"test",
+					"test_file.txt",
 				},
 			}
 
@@ -69,11 +60,11 @@ func TestArchive_Stream(t *testing.T) {
 			g.Assert(err).IsNil()
 
 			// Open the archive.
-			genericFs, err := archiver.FileSystem(context.Background(), archivePath)
+			genericFs, err := archives.FileSystem(context.Background(), archivePath, nil)
 			g.Assert(err).IsNil()
 
 			// Assert that we are opening an archive.
-			afs, ok := genericFs.(archiver.ArchiveFS)
+			afs, ok := genericFs.(iofs.ReadDirFS)
 			g.Assert(ok).IsTrue()
 
 			// Get the names of the files recursively from the archive.
@@ -120,9 +111,7 @@ func getFiles(f iofs.ReadDirFS, name string) ([]string, error) {
 				return nil, nil
 			}
 
-			for _, f := range files {
-				v = append(v, f)
-			}
+			v = append(v, files...)
 			continue
 		}
 

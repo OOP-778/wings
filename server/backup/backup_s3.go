@@ -12,7 +12,7 @@ import (
 	"emperror.dev/errors"
 	"github.com/cenkalti/backoff/v4"
 	"github.com/juju/ratelimit"
-	"github.com/mholt/archiver/v4"
+	"github.com/mholt/archives"
 
 	"github.com/pterodactyl/wings/config"
 	"github.com/pterodactyl/wings/remote"
@@ -48,12 +48,12 @@ func (s *S3Backup) WithLogContext(c map[string]interface{}) {
 
 // Generate creates a new backup on the disk, moves it into the S3 bucket via
 // the provided presigned URL, and then deletes the backup from the disk.
-func (s *S3Backup) Generate(ctx context.Context, basePath, ignore string) (*ArchiveDetails, error) {
+func (s *S3Backup) Generate(ctx context.Context, fsys *filesystem.Filesystem, ignore string) (*ArchiveDetails, error) {
 	defer s.Remove()
 
 	a := &filesystem.Archive{
-		BasePath: basePath,
-		Ignore:   ignore,
+		Filesystem: fsys,
+		Ignore:     ignore,
 	}
 
 	s.log().WithField("path", s.Path()).Info("creating backup for server")
@@ -93,14 +93,14 @@ func (s *S3Backup) Restore(ctx context.Context, r io.Reader, callback RestoreCal
 	if writeLimit := int64(config.Get().System.Backups.WriteLimit * 1024 * 1024); writeLimit > 0 {
 		reader = ratelimit.Reader(r, ratelimit.NewBucketWithRate(float64(writeLimit), writeLimit))
 	}
-	if err := format.Extract(ctx, reader, nil, func(ctx context.Context, f archiver.File) error {
+	if err := format.Extract(ctx, reader, func(ctx context.Context, f archives.FileInfo) error {
 		r, err := f.Open()
 		if err != nil {
 			return err
 		}
 		defer r.Close()
 
-		return callback(filesystem.ExtractNameFromArchive(f), f.FileInfo, r)
+		return callback(f.NameInArchive, f.FileInfo, r)
 	}); err != nil {
 		return err
 	}
@@ -231,7 +231,6 @@ func (fu *s3FileUploader) uploadPart(ctx context.Context, part string, size int6
 
 		return nil
 	}, fu.backoff(ctx))
-
 	if err != nil {
 		if v, ok := err.(*backoff.PermanentError); ok {
 			return "", v.Unwrap()

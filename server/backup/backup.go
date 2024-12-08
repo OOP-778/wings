@@ -11,16 +11,17 @@ import (
 
 	"emperror.dev/errors"
 	"github.com/apex/log"
-	"github.com/mholt/archiver/v4"
+	"github.com/mholt/archives"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/pterodactyl/wings/config"
 	"github.com/pterodactyl/wings/remote"
+	"github.com/pterodactyl/wings/server/filesystem"
 )
 
-var format = archiver.CompressedArchive{
-	Compression: archiver.Gz{},
-	Archival:    archiver.Tar{},
+var format = archives.CompressedArchive{
+	Compression: archives.Gz{},
+	Archival:    archives.Tar{},
 }
 
 type AdapterType string
@@ -46,7 +47,7 @@ type BackupInterface interface {
 	WithLogContext(map[string]interface{})
 	// Generate creates a backup in whatever the configured source for the
 	// specific implementation is.
-	Generate(context.Context, string, string) (*ArchiveDetails, error)
+	Generate(context.Context, *filesystem.Filesystem, string) (*ArchiveDetails, error)
 	// Ignored returns the ignored files for this backup instance.
 	Ignored() string
 	// Checksum returns a SHA1 checksum for the generated backup.
