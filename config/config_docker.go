@@ -2,9 +2,9 @@ package config
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"os"
-	"encoding/json"
 	"sort"
 
 	"github.com/docker/docker/api/types/container"
@@ -36,7 +36,7 @@ type DockerNetworkConfiguration struct {
 	Name       string                  `default:"pterodactyl_nw"`
 	ISPN       bool                    `default:"false" yaml:"ispn"`
 	Driver     string                  `default:"bridge"`
-	Mode       string                  `default:"host" yaml:"network_mode"`
+	Mode       string                  `default:"pterodactyl_nw" yaml:"network_mode"`
 	IsInternal bool                    `default:"false" yaml:"is_internal"`
 	EnableICC  bool                    `default:"true" yaml:"enable_icc"`
 	NetworkMTU int64                   `default:"1500" yaml:"network_mtu"`
